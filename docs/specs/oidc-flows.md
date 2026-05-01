@@ -17,9 +17,9 @@ Use `json()` to parse a JSON response and `tokenPayload()` when the response mus
 - optional `state`;
 - optional PKCE challenge.
 
-`setScope($scope)` appends extra scopes to the configured default scope. Passing an empty or whitespace-only string resets the adapter scope to the configured default.
+`getLoginUrl($state, $scope, $codeVerifier)` receives request-specific values as arguments. The `scope` argument appends extra scopes to the configured default scope. Passing an empty, null or whitespace-only scope uses the configured default.
 
-The consuming application must generate, store, and validate `state`.
+The consuming application must generate, store, and validate `state`. The adapter must not store `state`, extra scopes or PKCE verifiers on the service instance because Hyperf applications may reuse container services across concurrent requests.
 
 ## Authorization Code
 
@@ -32,13 +32,13 @@ The consuming application must generate, store, and validate `state`.
 - optional `client_secret`;
 - optional `code_verifier`.
 
-If no verifier argument is provided, the adapter uses the verifier stored by `enablePkce()`.
+If PKCE is used, the application must pass the verifier explicitly.
 
 ## PKCE
 
-`enablePkce($codeVerifier = null)` stores a verifier and returns it.
+`generateCodeVerifier($codeVerifier = null)` returns the supplied verifier or generates a URL-safe verifier.
 
-If no verifier is supplied, the adapter generates one. The authorization URL includes:
+Pass the verifier to `getLoginUrl()` to include:
 
 - `code_challenge`;
 - `code_challenge_method=S256`.

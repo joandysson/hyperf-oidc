@@ -43,10 +43,8 @@ class OidcTest extends TestCase
     public function testBuildsLoginUrlWithStateAndAdditionalScope(): void
     {
         $oidc = $this->oidc();
-        $oidc->setState('state value');
-        $oidc->setScope('profile email');
 
-        $parts = parse_url($oidc->getLoginUrl());
+        $parts = parse_url($oidc->getLoginUrl('state value', 'profile email'));
         parse_str($parts['query'] ?? '', $query);
 
         self::assertSame('https', $parts['scheme']);
@@ -80,14 +78,28 @@ class OidcTest extends TestCase
 
     public function testEmptyAdditionalScopeResetsToDefaultScope(): void
     {
-        $oidc = $this->oidc();
-        $oidc->setScope('profile');
-        $oidc->setScope('  ');
-
-        $parts = parse_url($oidc->getLoginUrl());
+        $parts = parse_url($this->oidc()->getLoginUrl(scope: '  '));
         parse_str($parts['query'] ?? '', $query);
 
         self::assertSame('openid', $query['scope']);
+    }
+
+    public function testLoginUrlDoesNotKeepRequestStateBetweenCalls(): void
+    {
+        $oidc = $this->oidc();
+
+        $firstParts = parse_url($oidc->getLoginUrl('first-state', 'profile', 'first-verifier'));
+        parse_str($firstParts['query'] ?? '', $firstQuery);
+
+        $secondParts = parse_url($oidc->getLoginUrl('second-state'));
+        parse_str($secondParts['query'] ?? '', $secondQuery);
+
+        self::assertSame('first-state', $firstQuery['state']);
+        self::assertSame('openid profile', $firstQuery['scope']);
+        self::assertArrayHasKey('code_challenge', $firstQuery);
+        self::assertSame('second-state', $secondQuery['state']);
+        self::assertSame('openid', $secondQuery['scope']);
+        self::assertArrayNotHasKey('code_challenge', $secondQuery);
     }
 
     public function testSupportsAbsoluteConfiguredEndpoints(): void
@@ -328,16 +340,15 @@ class OidcTest extends TestCase
         ], $this->formParams($this->history[0]['request']));
     }
 
-    public function testPkceAddsChallengeToLoginUrlAndStoresVerifier(): void
+    public function testPkceAddsChallengeToLoginUrlWithExplicitVerifier(): void
     {
         $oidc = $this->oidc();
-        $verifier = $oidc->enablePkce('known-verifier');
+        $verifier = $oidc->generateCodeVerifier('known-verifier');
 
-        $parts = parse_url($oidc->getLoginUrl());
+        $parts = parse_url($oidc->getLoginUrl(codeVerifier: $verifier));
         parse_str($parts['query'] ?? '', $query);
 
         self::assertSame('known-verifier', $verifier);
-        self::assertSame('known-verifier', $oidc->getCodeVerifier());
         self::assertSame('S256', $query['code_challenge_method']);
         self::assertSame(
             rtrim(strtr(base64_encode(hash('sha256', 'known-verifier', true)), '+/', '-_'), '='),
@@ -363,9 +374,8 @@ class OidcTest extends TestCase
     public function testPasswordGrantPostsScopeAndCredentials(): void
     {
         $oidc = $this->oidcWithHttpHistory();
-        $oidc->setScope('profile');
 
-        $oidc->authorizationLogin('user@example.test', 'password');
+        $oidc->authorizationLogin('user@example.test', 'password', 'profile');
 
         self::assertSame([
             'grant_type' => 'password',
@@ -389,6 +399,40 @@ class OidcTest extends TestCase
             'client_id' => 'client-app',
             'client_secret' => 'secret',
         ], $this->formParams($this->history[0]['request']));
+    }
+
+    public function testOauthErrorResponsesAreReturnedForParsing(): void
+    {
+        $history = [];
+        $stack = HandlerStack::create(new MockHandler([
+            new Response(400, [], '{"error":"invalid_grant"}'),
+        ]));
+        $stack->push(Middleware::history($history));
+
+        $config = $this->adapterConfig();
+        $api = new OidcAPI($config, new Client([
+            'handler' => $stack,
+            'base_uri' => $config->issuer(),
+            'http_errors' => false,
+        ]));
+        $oidc = new Oidc($config, $api);
+
+        $response = $oidc->authorizationClientCredentials();
+
+        self::assertSame(400, $response->getStatusCode());
+        self::assertSame(['error' => 'invalid_grant'], $oidc->json($response));
+    }
+
+    public function testDefaultHttpClientDisablesHttpErrors(): void
+    {
+        $config = $this->adapterConfig();
+        $api = new OidcAPI($config, new Client(['handler' => new MockHandler([])]));
+        $method = new \ReflectionMethod(OidcAPI::class, 'clientConfig');
+
+        $clientConfig = $method->invoke($api);
+
+        self::assertIsArray($clientConfig);
+        self::assertFalse($clientConfig['http_errors']);
     }
 
     public function testIntrospectionPostsTokenAndHint(): void
@@ -521,6 +565,27 @@ class OidcTest extends TestCase
         self::assertSame('The config for OIDC adapter.', $config['publish'][0]['description']);
         self::assertSame(dirname(__DIR__) . '/src/../publish/oidc.php', $config['publish'][0]['source']);
         self::assertSame('/app/config/autoload/oidc.php', $config['publish'][0]['destination']);
+    }
+
+    public function testPublishedConfigCanBeLoadedWithHyperfEnvFunction(): void
+    {
+        putenv('OIDC_ISSUER=https://idp.example.test');
+        putenv('OIDC_CLIENT_ID=client-app');
+        putenv('OIDC_CLIENT_SECRET=secret');
+        putenv('OIDC_REDIRECT_URI=https://app.example.test/callback');
+
+        $config = require dirname(__DIR__) . '/publish/oidc.php';
+
+        self::assertSame('default', $config['default']);
+        self::assertSame('https://idp.example.test', $config['providers']['default']['issuer']);
+        self::assertSame('client-app', $config['providers']['default']['client_id']);
+        self::assertSame('secret', $config['providers']['default']['client_secret']);
+        self::assertSame('https://app.example.test/callback', $config['providers']['default']['redirect_uri']);
+
+        putenv('OIDC_ISSUER');
+        putenv('OIDC_CLIENT_ID');
+        putenv('OIDC_CLIENT_SECRET');
+        putenv('OIDC_REDIRECT_URI');
     }
 
     public function testDomainExceptionsCanBeInstantiated(): void

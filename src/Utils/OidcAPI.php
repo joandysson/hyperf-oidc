@@ -122,6 +122,7 @@ class OidcAPI
         return [
             'base_uri' => $this->config->issuer(),
             'timeout' => $this->config->timeout(),
+            'http_errors' => false,
         ];
     }
 }

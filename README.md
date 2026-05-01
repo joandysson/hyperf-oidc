@@ -2,6 +2,8 @@
 
 Generic OpenID Connect adapter for Hyperf applications.
 
+You can use it to integrate login with any compatible OIDC/OAuth2 provider, including Google, Facebook, GitHub, Microsoft Entra ID, Keycloak, Auth0, Ory Hydra and other providers. Each provider still needs its own client credentials, redirect URI and supported endpoint configuration.
+
 The package handles the common OIDC/OAuth2 calls your application needs:
 
 - build the authorization URL;
@@ -41,6 +43,8 @@ config/autoload/oidc.php
 Published config:
 
 ```php
+use function Hyperf\Support\env;
+
 return [
     'default' => 'default',
     'providers' => [
@@ -65,6 +69,25 @@ return [
     ],
 ];
 ```
+
+## Configuration Reference
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `default` | `default` | Provider name used when `Oidc::class` is resolved directly from the Hyperf container. |
+| `providers` | `default` provider | Map of named provider configurations. Add more entries when the same app needs multiple OIDC providers. |
+| `providers.*.issuer` | `OIDC_ISSUER` | Base issuer URL for the provider. For Keycloak, this is usually the realm URL, such as `https://idp.example.com/realms/my-realm`. |
+| `providers.*.client_id` | `OIDC_CLIENT_ID` | OAuth/OIDC client identifier registered in the provider. |
+| `providers.*.client_secret` | `OIDC_CLIENT_SECRET` | OAuth/OIDC client secret. Set to `null` or an empty value for public clients. |
+| `providers.*.redirect_uri` | `OIDC_REDIRECT_URI` | Callback URL registered in the provider and used by the authorization code flow. |
+| `providers.*.timeout` | `0` | Guzzle request timeout in seconds. `0` keeps Guzzle's default no-timeout behavior. |
+| `providers.*.scope` | `openid` | Default scopes sent in authorization, password and client credentials flows. Extra scopes passed to methods are appended to this value. |
+| `providers.*.discovery.enabled` | `true` | Enables OIDC Discovery through the provider metadata document. |
+| `providers.*.discovery.url` | `null` | Optional custom discovery URL. When empty, the adapter uses `{issuer}/.well-known/openid-configuration`. |
+| `providers.*.endpoints.authorization` | `/authorize` | Manual authorization endpoint fallback used to build login URLs when discovery is disabled or does not provide `authorization_endpoint`. |
+| `providers.*.endpoints.token` | `/token` | Manual token endpoint fallback used for authorization code, refresh token, password and client credentials flows. |
+| `providers.*.endpoints.introspection` | `/introspect` | Manual introspection endpoint fallback used by `introspect()`. |
+| `providers.*.endpoints.end_session` | `/logout` | Manual logout/end-session endpoint fallback used by `logout()`. |
 
 ## Environment
 
@@ -121,21 +144,34 @@ $oidc = make(Oidc::class);
 Use this URL to redirect the user to the provider login page.
 
 ```php
-$oidc->setState($request->input('state', bin2hex(random_bytes(16))));
-$oidc->setScope('profile email');
+$state = bin2hex(random_bytes(16));
 
-$loginUrl = $oidc->getLoginUrl();
+// Store $state in the user's session before redirecting.
+
+$loginUrl = $oidc->getLoginUrl(
+    state: $state,
+    scope: 'profile email',
+);
 ```
 
-`setScope()` appends scopes to the configured default scope. If `OIDC_SCOPE` is `openid`, calling `setScope('profile email')` sends `openid profile email`.
+The `scope` argument appends scopes to the configured default scope. If `OIDC_SCOPE` is `openid`, passing `scope: 'profile email'` sends `openid profile email`.
+
+Request-specific values such as `state`, extra scopes and PKCE verifiers are passed as method arguments. The adapter does not store them on the service instance, so it remains safe when resolved as a long-lived container service.
 
 ### PKCE
 
 PKCE is optional and can be enabled per authorization request:
 
 ```php
-$codeVerifier = $oidc->enablePkce();
-$loginUrl = $oidc->getLoginUrl();
+$codeVerifier = $oidc->generateCodeVerifier();
+
+// Store $codeVerifier in the user's session before redirecting.
+
+$loginUrl = $oidc->getLoginUrl(
+    state: $state,
+    scope: 'profile email',
+    codeVerifier: $codeVerifier,
+);
 ```
 
 Store `$codeVerifier` in the user's session. The login URL will include `code_challenge` and `code_challenge_method=S256`.

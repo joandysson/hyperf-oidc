@@ -28,24 +28,12 @@ class Oidc
 
     private OidcAPI $oidcAPI;
 
-    private string $scope;
-
-    private string $state = '';
-
-    private ?string $codeVerifier = null;
-
     public function __construct(
         ?AdapterConfig $config = null,
         ?OidcAPI $oidcAPI = null
     ) {
         $this->config = $config ?? make(AdapterConfig::class);
         $this->oidcAPI = $oidcAPI ?? make(OidcAPI::class);
-        $this->scope = $this->config->scope();
-    }
-
-    public function setState(string $state): void
-    {
-        $this->state = $state;
     }
 
     public function getRedirectUri(): string
@@ -58,33 +46,17 @@ class Oidc
         return $this->config->issuer();
     }
 
-    public function setScope(string $scope): void
+    public function generateCodeVerifier(?string $codeVerifier = null): string
     {
-        $scope = trim($scope);
-
-        $this->scope = $scope === ''
-            ? $this->config->scope()
-            : trim(sprintf('%s %s', $this->config->scope(), $scope));
+        return $codeVerifier ?? rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
     }
 
-    public function enablePkce(?string $codeVerifier = null): string
-    {
-        $this->codeVerifier = $codeVerifier ?? $this->generateCodeVerifier();
-
-        return $this->codeVerifier;
-    }
-
-    public function getCodeVerifier(): ?string
-    {
-        return $this->codeVerifier;
-    }
-
-    public function getLoginUrl(): string
+    public function getLoginUrl(?string $state = null, ?string $scope = null, ?string $codeVerifier = null): string
     {
         return sprintf(
             '%s?%s',
             $this->config->authorizationEndpoint(),
-            $this->parameters()
+            $this->parameters($state, $scope, $codeVerifier)
         );
     }
 
@@ -115,8 +87,6 @@ class Oidc
             'code' => $code,
         ];
 
-        $codeVerifier ??= $this->codeVerifier;
-
         if ($codeVerifier !== null && $codeVerifier !== '') {
             $payload['code_verifier'] = $codeVerifier;
         }
@@ -137,22 +107,22 @@ class Oidc
     /**
      * @throws GuzzleException
      */
-    public function authorizationLogin(string $username, string $password): ResponseInterface
+    public function authorizationLogin(string $username, string $password, ?string $scope = null): ResponseInterface
     {
         return $this->oidcAPI->authorization($this->prepareGrantTypeValue(GrantTypes::PASSWORD, [
             'username' => $username,
             'password' => $password,
-            'scope' => $this->scope,
+            'scope' => $this->scope($scope),
         ]));
     }
 
     /**
      * @throws GuzzleException
      */
-    public function authorizationClientCredentials(): ResponseInterface
+    public function authorizationClientCredentials(?string $scope = null): ResponseInterface
     {
         return $this->oidcAPI->authorization($this->prepareGrantTypeValue(GrantTypes::CLIENT_CREDENTIALS, [
-            'scope' => $this->scope,
+            'scope' => $this->scope($scope),
         ]));
     }
 
@@ -202,7 +172,7 @@ class Oidc
         return $payload;
     }
 
-    private function parameters(): string
+    private function parameters(?string $state, ?string $scope, ?string $codeVerifier): string
     {
         $parameters = [
             'client_id' => $this->config->clientId(),
@@ -210,16 +180,18 @@ class Oidc
             'redirect_uri' => $this->config->redirectUri(),
         ];
 
-        if ($this->state !== '') {
-            $parameters['state'] = $this->state;
+        if ($state !== null && $state !== '') {
+            $parameters['state'] = $state;
         }
 
-        if ($this->scope !== '') {
-            $parameters['scope'] = $this->scope;
+        $scope = $this->scope($scope);
+
+        if ($scope !== '') {
+            $parameters['scope'] = $scope;
         }
 
-        if ($this->codeVerifier !== null) {
-            $parameters['code_challenge'] = $this->codeChallenge($this->codeVerifier);
+        if ($codeVerifier !== null && $codeVerifier !== '') {
+            $parameters['code_challenge'] = $this->codeChallenge($codeVerifier);
             $parameters['code_challenge_method'] = 'S256';
         }
 
@@ -231,9 +203,13 @@ class Oidc
         return array_merge(['grant_type' => $grantType], $grantValue);
     }
 
-    private function generateCodeVerifier(): string
+    private function scope(?string $scope): string
     {
-        return rtrim(strtr(base64_encode(random_bytes(64)), '+/', '-_'), '=');
+        $scope = trim((string) $scope);
+
+        return $scope === ''
+            ? $this->config->scope()
+            : trim(sprintf('%s %s', $this->config->scope(), $scope));
     }
 
     private function codeChallenge(string $codeVerifier): string

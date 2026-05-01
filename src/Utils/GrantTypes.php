@@ -15,11 +15,9 @@ namespace Joandysson\HyperfOidc\Utils;
 /**
  * Class GrantTypes.
  */
-class GrantTypes
+final class GrantTypes
 {
     public const AUTHORIZATION_CODE = 'authorization_code';
-
-    public const IMPLICIT = 'implicit';
 
     public const REFRESH_TOKEN = 'refresh_token';
 
