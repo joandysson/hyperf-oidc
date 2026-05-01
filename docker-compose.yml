@@ -1,0 +1,14 @@
+version: '3.9'
+
+services:
+  hyperf-oidc:
+    container_name: hyperf-oidc
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TIMEZONE: 'Asia/Shanghai'
+    command: "sleep infinity"
+    volumes:
+      - ./:/app
+    working_dir: /app
