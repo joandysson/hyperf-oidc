@@ -1,0 +1,10 @@
+parameters:
+  level: 5
+  paths:
+    - src
+    - test
+    - tools
+  tmpDir: build/phpstan
+  reportUnmatchedIgnoredErrors: true
+  bootstrapFiles:
+    - phpstan-bootstrap.php

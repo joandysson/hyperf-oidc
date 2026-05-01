@@ -1,0 +1,64 @@
+{
+  "name": "joandysson/hyperf-oidc",
+  "license": "MIT",
+  "description": "Generic OIDC adapter for Hyperf applications",
+  "type": "library",
+  "authors": [
+    {
+      "name": "Joandysson Gama",
+      "email": "joandysson.gama@gmail.com"
+    }
+  ],
+  "keywords": [
+    "oidc",
+    "openid-connect",
+    "hyperf",
+    "php",
+    "adapter"
+  ],
+  "require": {
+    "guzzlehttp/guzzle": "^7.0",
+    "php": ">= 8.1",
+    "hyperf/config": "^3.1",
+    "hyperf/contract": "^3.1",
+    "hyperf/guzzle": "^3.1",
+    "hyperf/support": "^3.1"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.0",
+    "hyperf/testing": "^3.1",
+    "mockery/mockery": "^1.0",
+    "phpstan/phpstan": "^1.10",
+    "phpunit/phpunit": "^10.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "Joandysson\\HyperfOidc\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "HyperfTest\\": "test/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true,
+  "config": {
+    "platform": {
+      "php": "8.1"
+    },
+    "optimize-autoloader": true,
+    "sort-packages": true
+  },
+  "extra": {
+      "hyperf": {
+        "config": "Joandysson\\HyperfOidc\\ConfigProvider"
+      }
+  },
+  "scripts": {
+    "test": "@php ./vendor/bin/phpunit --colors=always",
+    "test-coverage": "mkdir -p build/logs && XDEBUG_MODE=coverage php ./vendor/bin/phpunit --coverage-clover build/logs/clover.xml --coverage-text --colors=always --fail-on-risky --fail-on-warning && php tools/check-coverage.php build/logs/clover.xml 90",
+    "cs-fix": "php-cs-fixer fix $1",
+    "analyse": "phpstan analyse --memory-limit 300M -c phpstan.neon"
+  }
+}
